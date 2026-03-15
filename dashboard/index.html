@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>鲨鱼记账看板</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero">
+        <div class="hero-main">
+          <p class="eyebrow">Bookkeeping Dashboard</p>
+          <h1>鲨鱼记账风格消费看板</h1>
+          <a class="ghost-link" href="./detail.html">查看流水明细</a>
+        </div>
+      </header>
+
+      <section class="hero-controls-row">
+        <div class="hero-controls">
+          <div class="segmented" id="period-type-tabs"></div>
+          <div class="period-strip-wrap">
+            <div class="period-strip" id="period-select"></div>
+          </div>
+        </div>
+      </section>
+
+      <main class="grid">
+        <section class="panel kpi-panel">
+          <div class="panel-title-row">
+            <h2>当前概览</h2>
+            <span id="period-badge" class="badge"></span>
+          </div>
+          <div class="kpi-grid">
+            <article class="kpi-card expense">
+              <span>总支出</span>
+              <strong id="expense-total">-</strong>
+            </article>
+            <article class="kpi-card income">
+              <span>总收入</span>
+              <strong id="income-total">-</strong>
+            </article>
+            <article class="kpi-card balance">
+              <span>结余</span>
+              <strong id="balance-total">-</strong>
+            </article>
+            <article class="kpi-card avg">
+              <span>活跃日均支出</span>
+              <strong id="daily-avg-total">-</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel trend-panel">
+          <div class="panel-title-row">
+            <h2>趋势</h2>
+            <span class="muted" id="trend-caption"></span>
+          </div>
+          <div id="trend-chart" class="trend-chart"></div>
+        </section>
+
+        <section class="panel ranking-panel">
+          <div class="panel-title-row ranking-header">
+            <h2>消费排行</h2>
+            <div class="segmented small" id="ranking-tabs"></div>
+          </div>
+          <div id="category-list" class="category-list"></div>
+        </section>
+
+        <section class="panel days-panel">
+          <div class="panel-title-row">
+            <h2>当前周期单笔消费 Top 10</h2>
+          </div>
+          <div id="top-days" class="top-days"></div>
+        </section>
+
+        <section class="panel yearly-panel">
+          <div class="panel-title-row">
+            <h2 id="overview-title">周期总览</h2>
+            <span class="muted" id="overview-caption"></span>
+          </div>
+          <div id="yearly-list" class="yearly-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

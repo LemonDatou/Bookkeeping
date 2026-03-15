@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>流水明细</title>
+    <link rel="stylesheet" href="./detail.css" />
+  </head>
+  <body>
+    <div class="detail-shell">
+      <header class="detail-hero">
+        <div>
+          <a class="back-link" href="./">返回看板</a>
+          <h1>流水明细</h1>
+        </div>
+        <div class="hero-summary">
+          <div class="summary-card expense">
+            <span>本月支出</span>
+            <strong id="month-expense">-</strong>
+          </div>
+          <div class="summary-card income">
+            <span>本月收入</span>
+            <strong id="month-income">-</strong>
+          </div>
+        </div>
+      </header>
+
+      <section class="toolbar panel">
+        <div>
+          <p class="toolbar-label">年份</p>
+          <div class="segmented-wrap" id="year-tabs"></div>
+        </div>
+        <div>
+          <p class="toolbar-label">月份</p>
+          <div class="segmented-wrap" id="month-tabs"></div>
+        </div>
+      </section>
+
+      <main id="month-feed" class="month-feed"></main>
+    </div>
+
+    <button id="add-entry-btn" class="fab" type="button">+ 记一笔</button>
+
+    <div id="entry-modal" class="modal hidden">
+      <div class="modal-backdrop" data-close="1"></div>
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 id="modal-title">新增记账</h2>
+          <button type="button" class="text-btn" data-close="1">关闭</button>
+        </div>
+        <form id="entry-form" class="entry-form">
+          <label><span>收支类型</span><select name="io_type" required><option value="支出">支出</option><option value="收入">收入</option></select></label>
+          <label><span>日期</span><input name="occurred_on" type="date" required /></label>
+          <label><span>金额</span><input name="amount" type="number" step="0.01" min="0.01" required /></label>
+          <label><span>一级分类</span><input name="category" list="category-options" required /></label>
+          <label><span>二级分类</span><input name="subcategory" list="subcategory-options" /></label>
+          <label><span>备注</span><input name="memo" /></label>
+          <datalist id="category-options"></datalist>
+          <datalist id="subcategory-options"></datalist>
+          <div class="modal-actions">
+            <button type="button" id="delete-entry-btn" class="danger-btn hidden">删除</button>
+            <button type="submit" class="primary-btn">保存</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="./detail.js"></script>
+  </body>
+</html>
