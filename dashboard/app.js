@@ -36,6 +36,14 @@ function formatCurrency(value) {
   }).format(value);
 }
 
+function truncateMiddle(text, maxLength = 18) {
+  const value = String(text || '');
+  if (value.length <= maxLength) return value;
+  const head = Math.ceil((maxLength - 1) / 2);
+  const tail = Math.floor((maxLength - 1) / 2);
+  return `${value.slice(0, head)}…${value.slice(-tail)}`;
+}
+
 async function fetchJson(url, options = {}) {
   if (previewData && url === '/api/dashboard') {
     return previewData;
@@ -221,8 +229,8 @@ function renderSingleExpenseTop(snapshot) {
         <article class="day-item">
           <div class="day-row">
             <div>
-              <strong>${item.category}</strong>
-              <div class="secondary">${item.subcategory || '未标记'}${item.memo ? ` · ${item.memo}` : ''} · ${item.date}</div>
+              <strong>${item.category} · ${item.date}</strong>
+              <div class="secondary">${item.subcategory || '未标记'}${item.memo ? ` · ${truncateMiddle(item.memo)}` : ''}</div>
             </div>
             <span class="amount expense">${formatCurrency(item.amount)}</span>
           </div>

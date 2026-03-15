@@ -47,6 +47,14 @@ function formatCurrency(value) {
   }).format(value);
 }
 
+function truncateMiddle(text, maxLength = 18) {
+  const value = String(text || '');
+  if (value.length <= maxLength) return value;
+  const head = Math.ceil((maxLength - 1) / 2);
+  const tail = Math.floor((maxLength - 1) / 2);
+  return `${value.slice(0, head)}…${value.slice(-tail)}`;
+}
+
 async function fetchJson(url, options = {}) {
   if (previewBootstrap) {
     if (url === '/api/detail/bootstrap') return previewBootstrap;
@@ -201,7 +209,7 @@ function renderMonthTabs() {
 function subtitle(item) {
   const parts = [];
   if (item.subcategory) parts.push(item.subcategory);
-  if (item.memo) parts.push(item.memo);
+  if (item.memo) parts.push(truncateMiddle(item.memo));
   return parts.join(' · ');
 }
 
