@@ -52,22 +52,16 @@
             </button>
           </div>
           <div id="overview-panel" class="inline-overview hidden">
-            <div class="panel-title-row inline-overview-title">
-              <div>
-                <h3 id="overview-title">周期总览</h3>
-                <span class="muted" id="overview-caption"></span>
+            <section class="inline-trend">
+              <div class="panel-title-row inline-trend-title">
+                <h3>趋势</h3>
+                <span class="muted" id="trend-caption"></span>
               </div>
-            </div>
+              <div id="trend-chart" class="trend-chart"></div>
+            </section>
+            <div id="overview-summary" class="overview-summary"></div>
             <div id="yearly-list" class="yearly-list"></div>
           </div>
-        </section>
-
-        <section class="panel trend-panel">
-          <div class="panel-title-row">
-            <h2>趋势</h2>
-            <span class="muted" id="trend-caption"></span>
-          </div>
-          <div id="trend-chart" class="trend-chart"></div>
         </section>
 
         <section class="panel ranking-panel">

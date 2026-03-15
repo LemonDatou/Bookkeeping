@@ -21,10 +21,9 @@ const els = {
   rankingTabs: document.querySelector('#ranking-tabs'),
   categoryList: document.querySelector('#category-list'),
   topDays: document.querySelector('#top-days'),
-  overviewTitle: document.querySelector('#overview-title'),
-  overviewCaption: document.querySelector('#overview-caption'),
   overviewToggle: document.querySelector('#overview-toggle'),
   overviewPanel: document.querySelector('#overview-panel'),
+  overviewSummary: document.querySelector('#overview-summary'),
   yearlyList: document.querySelector('#yearly-list'),
 };
 
@@ -235,9 +234,26 @@ function renderSingleExpenseTop(snapshot) {
 
 function renderOverview(snapshot) {
   const titleMap = { year: '年度总览', month: '月度总览', week: '周度总览' };
-  const captionMap = { year: '所有年份', month: '当前年份内各月份', week: '当前月份内各周' };
-  els.overviewTitle.textContent = titleMap[state.periodType];
-  els.overviewCaption.textContent = captionMap[state.periodType];
+  const totals = snapshot.overview_rows.reduce(
+    (acc, item) => ({
+      expense: acc.expense + item.expense,
+      income: acc.income + item.income,
+      balance: acc.balance + item.balance,
+    }),
+    { expense: 0, income: 0, balance: 0 }
+  );
+  els.overviewSummary.innerHTML = `
+    <article class="overview-summary-card">
+      <div class="overview-grid">
+        <strong class="overview-grid-head">${titleMap[state.periodType]}</strong>
+        <div class="year-metrics">
+          <span class="amount expense">支出 ${formatCurrency(totals.expense)}</span>
+          <span class="amount income">收入 ${formatCurrency(totals.income)}</span>
+          <span class="amount balance">结余 ${formatCurrency(totals.balance)}</span>
+        </div>
+      </div>
+    </article>
+  `;
   els.yearlyList.innerHTML = snapshot.overview_rows
     .map(
       (item) => `
@@ -245,8 +261,8 @@ function renderOverview(snapshot) {
           <div class="year-row">
             <strong>${item.label}</strong>
             <div class="year-metrics">
-              <span class="amount income">收入 ${formatCurrency(item.income)}</span>
               <span class="amount expense">支出 ${formatCurrency(item.expense)}</span>
+              <span class="amount income">收入 ${formatCurrency(item.income)}</span>
               <span class="amount balance">结余 ${formatCurrency(item.balance)}</span>
             </div>
           </div>
@@ -271,9 +287,9 @@ function renderSnapshotSections() {
 function render() {
   renderPeriodTypeTabs();
   renderPeriodSelect();
-  renderTrend();
   renderRankingTabs();
   renderSnapshotSections();
+  renderTrend();
 }
 
 async function init() {

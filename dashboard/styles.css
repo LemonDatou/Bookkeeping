@@ -197,8 +197,7 @@ body {
   box-shadow: var(--shadow);
 }
 
-.kpi-panel,
-.trend-panel {
+.kpi-panel {
   grid-column: span 12;
 }
 
@@ -384,27 +383,63 @@ body {
   border-top: 1px solid rgba(31, 41, 55, 0.08);
 }
 
-.inline-overview-title {
-  margin-bottom: 12px;
+.overview-summary {
+  margin-bottom: 10px;
 }
 
-.inline-overview-title h3 {
-  margin: 0 0 4px;
+.overview-summary-card {
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 41, 55, 0.06);
+  border-radius: 16px;
+}
+
+.overview-grid,
+.year-row {
+  display: grid;
+  grid-template-columns: minmax(0, 120px) minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.overview-grid-head,
+.year-row > strong {
+  display: block;
+}
+
+.overview-grid-head {
   font-size: 18px;
 }
 
-.year-row {
-  align-items: center;
+.overview-summary-card > span,
+.year-metrics > span {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
+.inline-trend {
+  margin-bottom: 12px;
+  padding: 12px 0 10px;
+  border-top: 1px solid rgba(31, 41, 55, 0.06);
+  border-bottom: 1px solid rgba(31, 41, 55, 0.06);
+}
+
+.inline-trend-title {
+  margin-bottom: 10px;
+}
+
+.inline-trend-title h3 {
+  margin: 0;
+  font-size: 18px;
 }
 
 .year-metrics {
   display: grid;
-  grid-auto-flow: column;
-  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
   align-items: center;
   white-space: nowrap;
-  overflow-x: auto;
-  padding-bottom: 2px;
 }
 
 .hidden {
@@ -503,10 +538,6 @@ body {
     font-size: 14px;
   }
 
-  .trend-panel {
-    padding-bottom: 12px;
-  }
-
   .trend-svg {
     height: 136px;
   }
@@ -538,13 +569,33 @@ body {
     align-items: center;
   }
 
+  .overview-grid,
   .year-row {
-    display: grid;
+    grid-template-columns: 1fr;
     gap: 8px;
   }
 
   .year-metrics {
-    gap: 10px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
     font-size: 12px;
+  }
+
+  .overview-summary-card {
+    padding: 10px 12px;
+  }
+
+  .overview-summary-card > span,
+  .year-metrics > span {
+    font-size: 12px;
+  }
+
+  .inline-trend {
+    margin-bottom: 10px;
+    padding: 10px 0 8px;
+  }
+
+  .inline-trend-title h3 {
+    font-size: 16px;
   }
 }
