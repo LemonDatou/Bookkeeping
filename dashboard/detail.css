@@ -37,13 +37,14 @@ body { margin:0; font-family:"SF Pro Display","PingFang SC",sans-serif; color:va
 .entry { display:flex; justify-content:space-between; align-items:center; gap:14px; padding:14px 4px; border-bottom:1px solid var(--line); }
 .entry:last-child { border-bottom:0; }
 .entry-main { display:flex; align-items:center; gap:12px; min-width:0; flex:1; }
-.icon-badge { width:48px; height:48px; border-radius:50%; background:#f4efea; display:grid; place-items:center; font-size:22px; flex:0 0 auto; }
+.icon-badge { width:48px; height:48px; border-radius:50%; background:#f4efea; display:grid; place-items:center; font-size:22px; flex:0 0 auto; border:0; padding:0; color:inherit; }
+.icon-edit-trigger { cursor:pointer; }
 .entry-title { font-size:15px; font-weight:700; }
 .entry-subtitle { margin-top:4px; color:#b1b7c2; font-size:13px; }
-.entry-amount { flex:0 0 auto; font-size:19px; letter-spacing:-0.02em; }
+.entry-amount { flex:0 0 auto; font-size:19px; letter-spacing:-0.02em; white-space:nowrap; }
 .entry-amount.expense { color:#5d6470; }
 .entry-amount.income { color:var(--income); }
-.entry-actions { display:flex; gap:8px; }
+.entry-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex:0 0 auto; }
 .icon-btn,.text-btn,.primary-btn,.danger-btn { border:0; border-radius:12px; cursor:pointer; }
 .icon-btn,.text-btn { background:#f5f1ea; color:var(--ink); padding:8px 10px; font-size:13px; }
 .primary-btn { background:linear-gradient(135deg,#ff9d72,#ff6b57); color:white; padding:12px 16px; font-size:15px; font-weight:700; }
@@ -80,9 +81,13 @@ body { margin:0; font-family:"SF Pro Display","PingFang SC",sans-serif; color:va
   .summary-card { min-height:58px; padding:10px 12px; gap:8px; }
   .summary-card span { font-size:12px; }
   .summary-card strong { font-size:18px; }
-  .month-header,.day-header,.entry { flex-direction:column; align-items:flex-start; }
-  .entry { gap:8px; }
-  .entry-actions { width:100%; }
+  .month-header,.day-header { flex-direction:column; align-items:flex-start; }
+  .entry { gap:10px; align-items:center; }
+  .entry-main { gap:10px; min-width:0; }
+  .entry-main > div:last-child { min-width:0; }
+  .entry-title,.entry-subtitle { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .icon-badge { width:42px; height:42px; font-size:20px; }
+  .entry-amount { font-size:17px; }
   .category-picker { grid-template-columns:repeat(3,minmax(0,1fr)); }
   .modal-actions { flex-direction:column; }
 }

@@ -232,14 +232,13 @@ function monthCard(monthDetail) {
                   (item) => `
                     <article class="entry">
                       <div class="entry-main">
-                        <div class="icon-badge">${categoryIcons[item.category] || '🧾'}</div>
+                        <button type="button" class="icon-badge icon-edit-trigger" data-edit-id="${item.id}" aria-label="编辑 ${item.category}">${categoryIcons[item.category] || '🧾'}</button>
                         <div>
                           <div class="entry-title">${item.category}</div>
                           <div class="entry-subtitle">${subtitle(item) || '未标记'}</div>
                         </div>
                       </div>
                       <div class="entry-actions">
-                        <button type="button" class="icon-btn" data-edit-id="${item.id}">编辑</button>
                         <div class="entry-amount ${item.io_type === '收入' ? 'income' : 'expense'}">${item.io_type === '收入' ? '+' : '-'}${formatCurrency(item.amount)}</div>
                       </div>
                     </article>
