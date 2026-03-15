@@ -275,6 +275,32 @@ def list_subcategories(db_path: Path = DB_PATH) -> list[str]:
         conn.close()
 
 
+def build_category_presets(db_path: Path = DB_PATH) -> list[dict]:
+    grouped: dict[str, Counter[str]] = defaultdict(Counter)
+    category_counts: Counter[str] = Counter()
+    category_types: dict[str, Counter[str]] = defaultdict(Counter)
+    for row in fetch_transactions(db_path):
+        category = row['category']
+        category_counts[category] += 1
+        category_types[category][row['io_type']] += 1
+        if row['subcategory']:
+            grouped[category][row['subcategory']] += 1
+    presets = []
+    for category, count in category_counts.most_common():
+        presets.append(
+            {
+                'name': category,
+                'count': count,
+                'io_types': [name for name, _ in category_types[category].most_common()],
+                'subcategories': [
+                    {'name': name, 'count': subcount}
+                    for name, subcount in grouped[category].most_common(12)
+                ],
+            }
+        )
+    return presets
+
+
 def build_month_detail(month: str, db_path: Path = DB_PATH) -> dict:
     transactions = [row for row in fetch_transactions(db_path) if row['month'] == month]
     income = sum(row['amount_cents'] for row in transactions if row['io_type'] == '收入')
@@ -331,5 +357,6 @@ def build_detail_bootstrap(db_path: Path = DB_PATH) -> dict:
         'default_month': default_month,
         'categories': list_categories(db_path),
         'subcategories': list_subcategories(db_path),
+        'category_presets': build_category_presets(db_path),
         'month_detail': build_month_detail(default_month, db_path),
     }

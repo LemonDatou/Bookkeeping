@@ -44,10 +44,21 @@
               <span>结余</span>
               <strong id="balance-total">-</strong>
             </article>
-            <article class="kpi-card avg">
-              <span>活跃日均支出</span>
-              <strong id="daily-avg-total">-</strong>
-            </article>
+          </div>
+          <div class="overview-toggle-row">
+            <button id="overview-toggle" class="overview-toggle" type="button" aria-expanded="false" aria-controls="overview-panel">
+              <span>展开总览</span>
+              <i class="toggle-caret" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div id="overview-panel" class="inline-overview hidden">
+            <div class="panel-title-row inline-overview-title">
+              <div>
+                <h3 id="overview-title">周期总览</h3>
+                <span class="muted" id="overview-caption"></span>
+              </div>
+            </div>
+            <div id="yearly-list" class="yearly-list"></div>
           </div>
         </section>
 
@@ -72,14 +83,6 @@
             <h2>当前周期单笔消费 Top 10</h2>
           </div>
           <div id="top-days" class="top-days"></div>
-        </section>
-
-        <section class="panel yearly-panel">
-          <div class="panel-title-row">
-            <h2 id="overview-title">周期总览</h2>
-            <span class="muted" id="overview-caption"></span>
-          </div>
-          <div id="yearly-list" class="yearly-list"></div>
         </section>
       </main>
     </div>

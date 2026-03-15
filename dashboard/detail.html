@@ -52,10 +52,24 @@
           <label><span>收支类型</span><select name="io_type" required><option value="支出">支出</option><option value="收入">收入</option></select></label>
           <label><span>日期</span><input name="occurred_on" type="date" required /></label>
           <label><span>金额</span><input name="amount" type="number" step="0.01" min="0.01" required /></label>
-          <label><span>一级分类</span><input name="category" list="category-options" required /></label>
-          <label><span>二级分类</span><input name="subcategory" list="subcategory-options" /></label>
+          <div class="entry-field">
+            <div class="field-head">
+              <span>一级分类</span>
+              <button type="button" id="category-toggle" class="inline-toggle">展开</button>
+            </div>
+            <div id="selected-category" class="selected-category hidden"></div>
+            <div id="category-picker" class="category-picker"></div>
+            <input name="category" type="hidden" required />
+          </div>
+          <div class="entry-field">
+            <div class="field-head">
+              <span>二级分类</span>
+              <small>按已选一级分类推荐</small>
+            </div>
+            <div id="subcategory-picker" class="subcategory-picker"></div>
+            <input name="subcategory" list="subcategory-options" placeholder="没有合适的就手动填写" />
+          </div>
           <label><span>备注</span><input name="memo" /></label>
-          <datalist id="category-options"></datalist>
           <datalist id="subcategory-options"></datalist>
           <div class="modal-actions">
             <button type="button" id="delete-entry-btn" class="danger-btn hidden">删除</button>

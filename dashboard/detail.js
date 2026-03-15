@@ -1,11 +1,17 @@
 let detailData = null;
 let csrfToken = '';
 
+const previewBootstrap = window.__BOOKKEEPING_DETAIL_BOOTSTRAP__ || null;
+const previewMonths = window.__BOOKKEEPING_DETAIL_MONTHS__ || null;
+const isOfflinePreview = Boolean(previewBootstrap);
+
 const state = {
   year: '',
   month: '',
   renderedMonths: [],
   editingId: null,
+  selectedCategory: '',
+  categoryPickerExpanded: true,
 };
 const entryCache = new Map();
 
@@ -20,7 +26,10 @@ const els = {
   modalTitle: document.querySelector('#modal-title'),
   entryForm: document.querySelector('#entry-form'),
   deleteEntryBtn: document.querySelector('#delete-entry-btn'),
-  categoryOptions: document.querySelector('#category-options'),
+  categoryToggle: document.querySelector('#category-toggle'),
+  selectedCategory: document.querySelector('#selected-category'),
+  categoryPicker: document.querySelector('#category-picker'),
+  subcategoryPicker: document.querySelector('#subcategory-picker'),
   subcategoryOptions: document.querySelector('#subcategory-options'),
 };
 
@@ -31,11 +40,22 @@ const categoryIcons = {
 
 function formatCurrency(value) {
   return new Intl.NumberFormat('zh-CN', {
-    style: 'currency', currency: 'CNY', minimumFractionDigits: value % 1 === 0 ? 0 : 2, maximumFractionDigits: 2,
+    style: 'currency',
+    currency: 'CNY',
+    minimumFractionDigits: value % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
 async function fetchJson(url, options = {}) {
+  if (previewBootstrap) {
+    if (url === '/api/detail/bootstrap') return previewBootstrap;
+    if (url.startsWith('/api/detail/months/')) {
+      const month = url.slice('/api/detail/months/'.length);
+      return previewMonths?.[month] || previewBootstrap.month_detail;
+    }
+    throw new Error('离线预览不支持写入操作');
+  }
   const response = await fetch(url, {
     credentials: 'same-origin',
     headers: {
@@ -66,9 +86,96 @@ function createButtons(container, values, activeValue, labeler, onClick) {
   });
 }
 
+function getCategoryPresets() {
+  return detailData.category_presets || detailData.categories.map((name) => ({ name, subcategories: [], io_types: [] }));
+}
+
+function currentIoType() {
+  return els.entryForm.io_type.value || '支出';
+}
+
+function sortedCategoriesForCurrentType() {
+  const ioType = currentIoType();
+  return getCategoryPresets()
+    .slice()
+    .sort((left, right) => {
+      const leftHit = left.io_types?.includes(ioType) ? 1 : 0;
+      const rightHit = right.io_types?.includes(ioType) ? 1 : 0;
+      if (leftHit !== rightHit) return rightHit - leftHit;
+      return (right.count || 0) - (left.count || 0);
+    });
+}
+
 function renderOptions() {
-  els.categoryOptions.innerHTML = detailData.categories.map((item) => `<option value="${item}"></option>`).join('');
   els.subcategoryOptions.innerHTML = detailData.subcategories.map((item) => `<option value="${item}"></option>`).join('');
+}
+
+function todayString() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function syncCategoryPickerVisibility() {
+  const category = els.entryForm.category.value || state.selectedCategory;
+  els.categoryPicker.classList.toggle('hidden', !state.categoryPickerExpanded);
+  els.selectedCategory.classList.toggle('hidden', !category || state.categoryPickerExpanded);
+  if (category && !state.categoryPickerExpanded) {
+    els.selectedCategory.innerHTML = `<span class="category-icon">${categoryIcons[category] || '🧾'}</span><strong>${category}</strong>`;
+  } else {
+    els.selectedCategory.innerHTML = '';
+  }
+  els.categoryToggle.textContent = state.categoryPickerExpanded ? '收起' : category ? '修改' : '展开';
+}
+
+function renderCategoryPicker() {
+  const selected = els.entryForm.category.value || state.selectedCategory;
+  els.categoryPicker.innerHTML = sortedCategoriesForCurrentType()
+    .map((item) => {
+      const active = item.name === selected;
+      const icon = categoryIcons[item.name] || '🧾';
+      return `
+        <button type="button" class="category-option ${active ? 'active' : ''}" data-category="${item.name}">
+          <span class="category-icon">${icon}</span>
+          <span class="category-name">${item.name}</span>
+        </button>
+      `;
+    })
+    .join('');
+  els.categoryPicker.querySelectorAll('[data-category]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.selectedCategory = button.dataset.category;
+      els.entryForm.category.value = state.selectedCategory;
+      els.entryForm.subcategory.value = '';
+      state.categoryPickerExpanded = false;
+      renderCategoryPicker();
+      renderSubcategoryPicker();
+      syncCategoryPickerVisibility();
+    });
+  });
+  syncCategoryPickerVisibility();
+}
+
+function renderSubcategoryPicker() {
+  const category = els.entryForm.category.value || state.selectedCategory;
+  const preset = getCategoryPresets().find((item) => item.name === category);
+  const selected = els.entryForm.subcategory.value || '';
+  const options = preset?.subcategories || [];
+  els.subcategoryPicker.innerHTML = options.length
+    ? options
+        .map((item) => `
+          <button type="button" class="subcategory-chip ${item.name === selected ? 'active' : ''}" data-subcategory="${item.name}">
+            ${item.name}
+          </button>
+        `)
+        .join('')
+    : '<div class="picker-hint">先选一级分类，再从这里点选常用二级分类。</div>';
+  els.subcategoryPicker.querySelectorAll('[data-subcategory]').forEach((button) => {
+    button.addEventListener('click', () => {
+      els.entryForm.subcategory.value = button.dataset.subcategory;
+      renderSubcategoryPicker();
+    });
+  });
 }
 
 function monthLabel(month) {
@@ -211,19 +318,28 @@ async function maybeAppendNextMonth() {
 function openModal(item = null) {
   state.editingId = item ? item.id : null;
   els.modalTitle.textContent = item ? '修改记账' : '新增记账';
-  els.deleteEntryBtn.classList.toggle('hidden', !item);
+  els.deleteEntryBtn.classList.toggle('hidden', !item || isOfflinePreview);
   els.entryForm.reset();
+  const defaultDate = todayString();
   if (item) {
     els.entryForm.io_type.value = item.io_type;
-    els.entryForm.occurred_on.value = item.date || state.month + '-01';
+    els.entryForm.occurred_on.value = item.date || defaultDate;
     els.entryForm.amount.value = item.amount;
     els.entryForm.category.value = item.category;
     els.entryForm.subcategory.value = item.subcategory || '';
     els.entryForm.memo.value = item.memo || '';
+    state.selectedCategory = item.category;
+    state.categoryPickerExpanded = false;
   } else {
     els.entryForm.io_type.value = '支出';
-    els.entryForm.occurred_on.value = `${state.month}-01`;
+    els.entryForm.occurred_on.value = defaultDate;
+    els.entryForm.category.value = '';
+    els.entryForm.subcategory.value = '';
+    state.selectedCategory = '';
+    state.categoryPickerExpanded = true;
   }
+  renderCategoryPicker();
+  renderSubcategoryPicker();
   els.entryModal.classList.remove('hidden');
 }
 
@@ -268,6 +384,10 @@ function formPayload() {
 
 async function submitEntry(event) {
   event.preventDefault();
+  if (isOfflinePreview) {
+    alert('离线预览页仅供查看，不能直接保存。');
+    return;
+  }
   const payload = formPayload();
   try {
     if (state.editingId) {
@@ -289,7 +409,7 @@ async function submitEntry(event) {
 }
 
 async function deleteEntry() {
-  if (!state.editingId) return;
+  if (!state.editingId || isOfflinePreview) return;
   if (!window.confirm('确认删除这条记录吗？')) return;
   try {
     await fetchJson(`/api/transactions/${state.editingId}`, { method: 'DELETE' });
@@ -311,7 +431,7 @@ async function deleteEntry() {
 async function init() {
   try {
     detailData = await fetchJson('/api/detail/bootstrap');
-    csrfToken = detailData.csrf_token;
+    csrfToken = detailData.csrf_token || '';
     state.year = detailData.default_year;
     state.month = detailData.default_month;
     renderOptions();
@@ -319,6 +439,24 @@ async function init() {
     await resetFeed();
     els.addEntryBtn.addEventListener('click', () => openModal());
     els.entryForm.addEventListener('submit', submitEntry);
+    els.categoryToggle.addEventListener('click', () => {
+      state.categoryPickerExpanded = !state.categoryPickerExpanded;
+      syncCategoryPickerVisibility();
+    });
+    els.entryForm.io_type.addEventListener('change', () => {
+      const candidates = sortedCategoriesForCurrentType();
+      if (!candidates.some((item) => item.name === els.entryForm.category.value)) {
+        state.selectedCategory = '';
+        els.entryForm.category.value = '';
+        els.entryForm.subcategory.value = '';
+        state.categoryPickerExpanded = true;
+      }
+      renderCategoryPicker();
+      renderSubcategoryPicker();
+    });
+    els.entryForm.subcategory.addEventListener('input', () => {
+      renderSubcategoryPicker();
+    });
     els.deleteEntryBtn.addEventListener('click', deleteEntry);
     els.entryModal.addEventListener('click', (event) => {
       if (event.target.dataset.close) closeModal();
@@ -326,6 +464,9 @@ async function init() {
     window.addEventListener('scroll', () => {
       maybeAppendNextMonth().catch(console.error);
     }, { passive: true });
+    if (isOfflinePreview) {
+      els.addEntryBtn.textContent = '离线预览';
+    }
   } catch (error) {
     console.error(error);
     alert('加载明细失败');

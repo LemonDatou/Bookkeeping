@@ -1,9 +1,12 @@
 let dashboardData = null;
 
+const previewData = window.__BOOKKEEPING_PREVIEW__ || null;
+
 const state = {
   periodType: 'month',
   periodKey: '',
   rankingMode: 'secondary',
+  overviewExpanded: false,
 };
 
 const els = {
@@ -13,7 +16,6 @@ const els = {
   expenseTotal: document.querySelector('#expense-total'),
   incomeTotal: document.querySelector('#income-total'),
   balanceTotal: document.querySelector('#balance-total'),
-  dailyAvgTotal: document.querySelector('#daily-avg-total'),
   trendCaption: document.querySelector('#trend-caption'),
   trendChart: document.querySelector('#trend-chart'),
   rankingTabs: document.querySelector('#ranking-tabs'),
@@ -21,6 +23,8 @@ const els = {
   topDays: document.querySelector('#top-days'),
   overviewTitle: document.querySelector('#overview-title'),
   overviewCaption: document.querySelector('#overview-caption'),
+  overviewToggle: document.querySelector('#overview-toggle'),
+  overviewPanel: document.querySelector('#overview-panel'),
   yearlyList: document.querySelector('#yearly-list'),
 };
 
@@ -34,6 +38,9 @@ function formatCurrency(value) {
 }
 
 async function fetchJson(url, options = {}) {
+  if (previewData && url === '/api/dashboard') {
+    return previewData;
+  }
   const response = await fetch(url, {
     credentials: 'same-origin',
     headers: {
@@ -72,6 +79,13 @@ function getCurrentView() {
 
 function getCurrentSnapshot() {
   return getCurrentView().periods[state.periodKey];
+}
+
+function syncOverviewDisclosure() {
+  const expanded = state.overviewExpanded;
+  els.overviewPanel.classList.toggle('hidden', !expanded);
+  els.overviewToggle.setAttribute('aria-expanded', String(expanded));
+  els.overviewToggle.querySelector('span').textContent = expanded ? '收起总览' : '展开总览';
 }
 
 function renderPeriodTypeTabs() {
@@ -115,34 +129,48 @@ function renderPeriodSelect() {
 function renderTrend() {
   const series = getCurrentView().trend;
   const width = 960;
-  const height = 220;
-  const padding = 28;
+  const height = window.innerWidth <= 720 ? 156 : 188;
+  const baseline = height - 26;
+  const top = 18;
+  const left = 20;
+  const right = 20;
   const max = Math.max(...series.flatMap((item) => [item.expense, item.income]), 1);
-  const stepX = series.length > 1 ? (width - padding * 2) / (series.length - 1) : 0;
+  const stepX = series.length > 1 ? (width - left - right) / (series.length - 1) : 0;
 
   els.trendCaption.textContent = `最近 ${series.length} 个${periodTypeLabel(state.periodType)}周期`;
 
   const pointsFor = (key) =>
     series
       .map((item, index) => {
-        const x = padding + index * stepX;
-        const y = height - padding - (item[key] / max) * (height - padding * 2);
+        const x = left + index * stepX;
+        const y = baseline - (item[key] / max) * (baseline - top);
         return `${x},${y}`;
       })
       .join(' ');
 
+  const dotsFor = (key, color) =>
+    series
+      .map((item, index) => {
+        const x = left + index * stepX;
+        const y = baseline - (item[key] / max) * (baseline - top);
+        return `<circle cx="${x}" cy="${y}" r="3.5" fill="${color}"></circle>`;
+      })
+      .join('');
+
   const labels = series
     .map((item, index) => {
-      const x = padding + index * stepX;
-      return `<text x="${x}" y="206" text-anchor="middle" fill="#6b7280" font-size="11">${item.short_label}</text>`;
+      const x = left + index * stepX;
+      return `<text x="${x}" y="${height - 6}" text-anchor="middle" fill="#8f96a3" font-size="10">${item.short_label}</text>`;
     })
     .join('');
 
   els.trendChart.innerHTML = `
     <svg class="trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="趋势图">
-      <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="rgba(31,41,55,0.1)" />
-      <polyline fill="none" stroke="#ff7a59" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" points="${pointsFor('expense')}" />
-      <polyline fill="none" stroke="#22a06b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" points="${pointsFor('income')}" />
+      <line x1="${left}" y1="${baseline}" x2="${width - right}" y2="${baseline}" stroke="rgba(31,41,55,0.08)" />
+      <polyline fill="none" stroke="#ff7a59" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${pointsFor('expense')}" />
+      <polyline fill="none" stroke="#22a06b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${pointsFor('income')}" />
+      ${dotsFor('expense', '#ff7a59')}
+      ${dotsFor('income', '#22a06b')}
       ${labels}
     </svg>
     <div class="trend-legend">
@@ -216,9 +244,11 @@ function renderOverview(snapshot) {
         <article class="year-item">
           <div class="year-row">
             <strong>${item.label}</strong>
-            <span class="amount income">收入 ${formatCurrency(item.income)}</span>
-            <span class="amount expense">支出 ${formatCurrency(item.expense)}</span>
-            <span class="amount balance">结余 ${formatCurrency(item.balance)}</span>
+            <div class="year-metrics">
+              <span class="amount income">收入 ${formatCurrency(item.income)}</span>
+              <span class="amount expense">支出 ${formatCurrency(item.expense)}</span>
+              <span class="amount balance">结余 ${formatCurrency(item.balance)}</span>
+            </div>
           </div>
         </article>
       `
@@ -232,10 +262,10 @@ function renderSnapshotSections() {
   els.expenseTotal.textContent = formatCurrency(snapshot.expense);
   els.incomeTotal.textContent = formatCurrency(snapshot.income);
   els.balanceTotal.textContent = formatCurrency(snapshot.balance);
-  els.dailyAvgTotal.textContent = formatCurrency(snapshot.daily_avg_expense);
   renderRanking(snapshot);
   renderSingleExpenseTop(snapshot);
   renderOverview(snapshot);
+  syncOverviewDisclosure();
 }
 
 function render() {
@@ -251,6 +281,10 @@ async function init() {
     dashboardData = await fetchJson('/api/dashboard');
     state.periodType = dashboardData.default_period_type;
     state.periodKey = dashboardData.controls.default_periods[state.periodType];
+    els.overviewToggle.addEventListener('click', () => {
+      state.overviewExpanded = !state.overviewExpanded;
+      syncOverviewDisclosure();
+    });
     render();
   } catch (error) {
     console.error(error);
