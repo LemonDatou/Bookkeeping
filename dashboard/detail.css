@@ -40,7 +40,8 @@ body { margin:0; font-family:"SF Pro Display","PingFang SC",sans-serif; color:va
 .icon-badge { width:48px; height:48px; border-radius:50%; background:#f4efea; display:grid; place-items:center; font-size:22px; flex:0 0 auto; border:0; padding:0; color:inherit; }
 .icon-edit-trigger { cursor:pointer; }
 .entry-title { font-size:15px; font-weight:700; }
-.entry-subtitle { margin-top:4px; color:#b1b7c2; font-size:13px; }
+.entry-subtitle { margin-top:4px; color:#b1b7c2; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.entry-main > div:last-child { flex:1; min-width:0; overflow:hidden; }
 .entry-amount { flex:0 0 auto; font-size:19px; letter-spacing:-0.02em; white-space:nowrap; }
 .entry-amount.expense { color:#5d6470; }
 .entry-amount.income { color:var(--income); }
@@ -84,8 +85,7 @@ body { margin:0; font-family:"SF Pro Display","PingFang SC",sans-serif; color:va
   .month-header,.day-header { flex-direction:column; align-items:flex-start; }
   .entry { gap:10px; align-items:center; }
   .entry-main { gap:10px; min-width:0; }
-  .entry-main > div:last-child { min-width:0; }
-  .entry-title,.entry-subtitle { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .entry-title { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .icon-badge { width:42px; height:42px; font-size:20px; }
   .entry-amount { font-size:17px; }
   .category-picker { grid-template-columns:repeat(3,minmax(0,1fr)); }

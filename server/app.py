@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -63,6 +64,7 @@ def create_app() -> Flask:
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
     app.config['SESSION_COOKIE_SECURE'] = os.environ.get('BOOKKEEPING_SECURE_COOKIE', '').lower() in {'1', 'true', 'yes'}
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
     assert_required_secrets()
     ensure_manual_source(DB_PATH)
     ensure_ingest_tables(DB_PATH)
@@ -112,6 +114,7 @@ def create_app() -> Flask:
             password = request.form.get('password', '')
             if verify_password(password):
                 session.clear()
+                session.permanent = True
                 session['authenticated'] = True
                 session['csrf_token'] = secrets.token_urlsafe(24)
                 return redirect(request.args.get('next') or url_for('index'))
@@ -180,7 +183,16 @@ def create_app() -> Flask:
         if (resp := require_csrf()) is not None:
             return resp
         payload = request.get_json(force=True, silent=True) or {}
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            old = fetch_transaction_by_id(conn, transaction_id)
+        finally:
+            conn.close()
         row = update_transaction(DB_PATH, transaction_id, payload)
+        if old['category'] == '未知' and row['category'] != '未知':
+            merchant = _merchant_for_transaction(DB_PATH, transaction_id, old['memo'])
+            if merchant:
+                upsert_merchant_category(DB_PATH, merchant, row['category'], row['subcategory'])
         return jsonify(row)
 
     @app.delete('/api/transactions/<int:transaction_id>')
@@ -347,6 +359,16 @@ def ensure_ingest_tables(db_path: Path) -> None:
             )
             '''
         )
+        conn.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS merchant_categories (
+              merchant TEXT PRIMARY KEY,
+              category TEXT NOT NULL DEFAULT '未知',
+              subcategory TEXT NOT NULL DEFAULT '',
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            '''
+        )
         conn.commit()
     finally:
         conn.close()
@@ -467,17 +489,130 @@ def extract_sms_text(payload: Any, req: request.__class__) -> str:
     raise ValueError('短信内容不能为空')
 
 
+def _extract_amount(text: str) -> Decimal | None:
+    for pattern in [
+        r'[¥￥](\d+(?:\.\d+)?)',
+        r'人民币(\d+(?:\.\d+)?)',
+        r'(?:消费|支付|付款|到账)[^\d]{0,5}(\d+(?:\.\d+)?)元',
+    ]:
+        m = re.search(pattern, text)
+        if m:
+            try:
+                v = Decimal(m.group(1))
+                if v > 0:
+                    return v
+            except InvalidOperation:
+                continue
+    return None
+
+
+def _extract_date(text: str, now: datetime) -> str | None:
+    m = re.search(r'(\d{4})年(\d{1,2})月(\d{1,2})日', text)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    m = re.search(r'(\d{1,2})月(\d{1,2})日', text)
+    if m:
+        month, day = int(m.group(1)), int(m.group(2))
+        year = now.year if month <= now.month else now.year - 1
+        return f"{year}-{month:02d}-{day:02d}"
+    return None
+
+
+def parse_sms(sms_text: str) -> dict[str, Any] | None:
+    """解析中文银行/支付短信，返回解析结果 dict，无法识别时返回 None。"""
+    now = datetime.now(APP_TZ)
+    time_m = re.search(r'(\d{2}:\d{2})', sms_text)
+    time_str = time_m.group(1) if time_m else ''
+
+    # 扣收费用类（短信费等）
+    m = re.search(r'扣收(.{1,30}?)人民币(\d+(?:\.\d+)?)', sms_text)
+    if m:
+        date_str = _extract_date(sms_text, now)
+        if not date_str:
+            return None
+        description = m.group(1).strip()
+        norm = re.sub(r'^\d{1,2}月', '', description)
+        result: dict[str, Any] = {
+            'date': date_str, 'time': time_str,
+            'amount': Decimal(m.group(2)), 'merchant': description, 'io_type': '支出',
+        }
+        if '短信费' in norm:
+            result['category_override'] = '日用'
+            result['subcategory_override'] = '月租费'
+        return result
+
+    amount = _extract_amount(sms_text)
+    if not amount:
+        return None
+    date_str = _extract_date(sms_text, now)
+    if not date_str:
+        return None
+
+    # 快捷支付：在X快捷支付，商家名取全段
+    m = re.search(r'在(.+?)快捷支付', sms_text)
+    if m:
+        return {'date': date_str, 'time': time_str, 'amount': amount, 'merchant': m.group(1).strip(), 'io_type': '支出'}
+
+    # 在【X】消费
+    m = re.search(r'在【([^】]+)】', sms_text)
+    if m:
+        return {'date': date_str, 'time': time_str, 'amount': amount, 'merchant': m.group(1).strip(), 'io_type': '支出'}
+
+    # 引号包裹
+    m = re.search(r'[""「]([^""」]+)[""」]', sms_text)
+    if m:
+        return {'date': date_str, 'time': time_str, 'amount': amount, 'merchant': m.group(1).strip(), 'io_type': '支出'}
+
+    return None
+
+
+def _merchant_for_transaction(db_path: Path, transaction_id: int, fallback_memo: str) -> str:
+    """从 sms_inbox.parser_note 取商家名（格式：merchant=X）。
+    parser_note 是入账时写入的原始值，不受备注编辑影响。
+    若找不到则降级：剥掉备注末尾的 HH:MM。"""
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT parser_note FROM sms_inbox WHERE transaction_id = ? AND parser_note LIKE 'merchant=%' LIMIT 1",
+            (transaction_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row:
+        return row[0][len('merchant='):]
+    return re.sub(r'\s+\d{2}:\d{2}$', '', fallback_memo.strip())
+
+
+def upsert_merchant_category(db_path: Path, merchant: str, category: str, subcategory: str) -> None:
+    if not merchant or not category or category == '未知':
+        return
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            '''
+            INSERT INTO merchant_categories (merchant, category, subcategory, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(merchant) DO UPDATE SET
+              category = excluded.category,
+              subcategory = excluded.subcategory,
+              updated_at = CURRENT_TIMESTAMP
+            ''',
+            (merchant, category, subcategory),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def ingest_sms(db_path: Path, sms_text: str) -> tuple[dict[str, Any], int]:
     content_hash = hashlib.sha1(sms_text.encode('utf-8')).hexdigest()
+
+    # 1. 去重检查 + 商家分类查询
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
         existing = conn.execute(
-            '''
-            SELECT id, content, status, created_at, parsed_at, transaction_id, parser_note
-            FROM sms_inbox
-            WHERE content_hash = ?
-            ''',
+            'SELECT id, content, status, created_at, parsed_at, transaction_id, parser_note FROM sms_inbox WHERE content_hash = ?',
             (content_hash,),
         ).fetchone()
         if existing:
@@ -492,23 +627,66 @@ def ingest_sms(db_path: Path, sms_text: str) -> tuple[dict[str, Any], int]:
                 'deduplicated': True,
             }, 200
 
+        parsed = parse_sms(sms_text)
+        category = '未知'
+        subcategory = ''
+        if parsed:
+            if parsed.get('category_override'):
+                category = parsed['category_override']
+                subcategory = parsed.get('subcategory_override', '')
+            else:
+                cat_row = conn.execute(
+                    'SELECT category, subcategory FROM merchant_categories WHERE merchant = ?',
+                    (parsed['merchant'],),
+                ).fetchone()
+                if cat_row:
+                    category = cat_row['category']
+                    subcategory = cat_row['subcategory']
+    finally:
+        conn.close()
+
+    # 2. 创建交易记录（或记录解析失败）
+    transaction: dict[str, Any] | None = None
+    if parsed:
+        memo = f"{parsed['merchant']} {parsed['time']}" if parsed['time'] else parsed['merchant']
+        try:
+            transaction = insert_transaction(db_path, {
+                'io_type': parsed['io_type'],
+                'occurred_on': parsed['date'],
+                'amount': parsed['amount'],
+                'category': category,
+                'subcategory': subcategory,
+                'memo': memo,
+            })
+            status = 'parsed'
+            parser_note = f"merchant={parsed['merchant']}"
+        except Exception as e:
+            status = 'error'
+            parser_note = f"创建交易失败：{e}"
+    else:
+        status = 'error'
+        parser_note = '解析失败：无法识别短信格式'
+
+    # 3. 写入 sms_inbox
+    now_str = datetime.now(APP_TZ).isoformat()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
         cursor = conn.execute(
-            '''
-            INSERT INTO sms_inbox (content, content_hash, status)
-            VALUES (?, ?, 'pending')
-            ''',
-            (sms_text, content_hash),
+            'INSERT INTO sms_inbox (content, content_hash, status, parsed_at, transaction_id, parser_note) VALUES (?, ?, ?, ?, ?, ?)',
+            (
+                sms_text, content_hash, status,
+                now_str if status == 'parsed' else None,
+                transaction['id'] if transaction else None,
+                parser_note,
+            ),
         )
         conn.commit()
         row = conn.execute(
-            '''
-            SELECT id, content, status, created_at, parsed_at, transaction_id, parser_note
-            FROM sms_inbox
-            WHERE id = ?
-            ''',
+            'SELECT id, content, status, created_at, parsed_at, transaction_id, parser_note FROM sms_inbox WHERE id = ?',
             (cursor.lastrowid,),
         ).fetchone()
-        return {
+        result: dict[str, Any] = {
             'id': row['id'],
             'content': row['content'],
             'status': row['status'],
@@ -517,7 +695,10 @@ def ingest_sms(db_path: Path, sms_text: str) -> tuple[dict[str, Any], int]:
             'transaction_id': row['transaction_id'],
             'parser_note': row['parser_note'],
             'deduplicated': False,
-        }, 201
+        }
+        if transaction:
+            result['transaction'] = transaction
+        return result, 201
     finally:
         conn.close()
 
