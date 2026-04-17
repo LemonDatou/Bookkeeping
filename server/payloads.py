@@ -342,7 +342,7 @@ def build_single_snapshot(period_type: str, period_key: str, db_path: Path = DB_
 
     # overview_rows 需要同维度的分组数据
     if period_type == 'year':
-        scope_rows = rows
+        scope_rows = fetch_transactions(db_path)
     elif period_type == 'month':
         year = period_key.split('-')[0]
         scope_rows = fetch_transactions(db_path, year=year)

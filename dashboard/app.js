@@ -24,6 +24,7 @@ const els = {
   rankingTabs: document.querySelector('#ranking-tabs'),
   categoryList: document.querySelector('#category-list'),
   topDays: document.querySelector('#top-days'),
+  overviewToggleRow: document.querySelector('#overview-toggle-row'),
   overviewToggle: document.querySelector('#overview-toggle'),
   overviewPanel: document.querySelector('#overview-panel'),
   overviewSummary: document.querySelector('#overview-summary'),
@@ -95,8 +96,13 @@ function getCurrentTrend() {
   return dashboardData.trend[state.periodType];
 }
 
+function isOverviewAlwaysExpanded() {
+  return state.periodType === 'year';
+}
+
 function syncOverviewDisclosure() {
-  const expanded = state.overviewExpanded;
+  const expanded = isOverviewAlwaysExpanded() || state.overviewExpanded;
+  els.overviewToggleRow.classList.toggle('hidden', isOverviewAlwaysExpanded());
   els.overviewPanel.classList.toggle('hidden', !expanded);
   els.overviewToggle.setAttribute('aria-expanded', String(expanded));
   els.overviewToggle.querySelector('span').textContent = expanded ? '收起总览' : '展开总览';
