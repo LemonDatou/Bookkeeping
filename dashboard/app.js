@@ -7,7 +7,10 @@ const state = {
   periodKey: '',
   rankingMode: 'secondary',
   overviewExpanded: false,
+  loading: false,
 };
+
+const snapshotCache = {};
 
 const els = {
   periodTypeTabs: document.querySelector('#period-type-tabs'),
@@ -45,7 +48,7 @@ function truncateMiddle(text, maxLength = 18) {
 }
 
 async function fetchJson(url, options = {}) {
-  if (previewData && url === '/api/dashboard') {
+  if (previewData && url === '/api/dashboard/init') {
     return previewData;
   }
   const response = await fetch(url, {
@@ -80,12 +83,16 @@ function createSegmentedButtons(container, items, activeValue, onClick) {
   });
 }
 
-function getCurrentView() {
-  return dashboardData.views[state.periodType];
+async function getSnapshot(periodType, periodKey) {
+  const cacheKey = `${periodType}:${periodKey}`;
+  if (snapshotCache[cacheKey]) return snapshotCache[cacheKey];
+  const data = await fetchJson(`/api/dashboard/snapshot?type=${periodType}&key=${periodKey}`);
+  snapshotCache[cacheKey] = data;
+  return data;
 }
 
-function getCurrentSnapshot() {
-  return getCurrentView().periods[state.periodKey];
+function getCurrentTrend() {
+  return dashboardData.trend[state.periodType];
 }
 
 function syncOverviewDisclosure() {
@@ -100,10 +107,10 @@ function renderPeriodTypeTabs() {
     els.periodTypeTabs,
     dashboardData.controls.period_types.map((value) => ({ value, label: periodTypeLabel(value) })),
     state.periodType,
-    (value) => {
+    async (value) => {
       state.periodType = value;
       state.periodKey = dashboardData.controls.default_periods[value];
-      render();
+      await renderAsync();
     }
   );
 }
@@ -121,9 +128,9 @@ function renderPeriodSelect() {
     .join('');
   const activeButton = els.periodSelect.querySelector('.period-chip.active');
   els.periodSelect.querySelectorAll('.period-chip').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       state.periodKey = button.dataset.value;
-      render();
+      await renderAsync();
     });
   });
   if (activeButton) {
@@ -134,7 +141,7 @@ function renderPeriodSelect() {
 }
 
 function renderTrend() {
-  const series = getCurrentView().trend;
+  const series = getCurrentTrend();
   const width = 960;
   const height = window.innerWidth <= 720 ? 156 : 188;
   const baseline = height - 26;
@@ -195,9 +202,9 @@ function renderRankingTabs() {
       { value: 'primary', label: '一级分类' },
     ],
     state.rankingMode,
-    (value) => {
+    async (value) => {
       state.rankingMode = value;
-      render();
+      await renderAsync();
     }
   );
 }
@@ -280,8 +287,7 @@ function renderOverview(snapshot) {
     .join('');
 }
 
-function renderSnapshotSections() {
-  const snapshot = getCurrentSnapshot();
+function renderSnapshotSections(snapshot) {
   els.periodBadge.textContent = snapshot.label;
   els.expenseTotal.textContent = formatCurrency(snapshot.expense);
   els.incomeTotal.textContent = formatCurrency(snapshot.income);
@@ -292,24 +298,40 @@ function renderSnapshotSections() {
   syncOverviewDisclosure();
 }
 
-function render() {
-  renderPeriodTypeTabs();
-  renderPeriodSelect();
-  renderRankingTabs();
-  renderSnapshotSections();
-  renderTrend();
+async function renderAsync() {
+  if (state.loading) return;
+  state.loading = true;
+  try {
+    renderPeriodTypeTabs();
+    renderPeriodSelect();
+    renderRankingTabs();
+    renderTrend();
+    const snapshot = await getSnapshot(state.periodType, state.periodKey);
+    renderSnapshotSections(snapshot);
+  } finally {
+    state.loading = false;
+  }
 }
 
 async function init() {
   try {
-    dashboardData = await fetchJson('/api/dashboard');
+    dashboardData = await fetchJson('/api/dashboard/init');
+
     state.periodType = dashboardData.default_period_type;
     state.periodKey = dashboardData.controls.default_periods[state.periodType];
+
+    // 将初始快照放入缓存
+    if (dashboardData.default_snapshot && dashboardData.default_snapshot.key) {
+      const cacheKey = `${state.periodType}:${state.periodKey}`;
+      snapshotCache[cacheKey] = dashboardData.default_snapshot;
+    }
+
     els.overviewToggle.addEventListener('click', () => {
       state.overviewExpanded = !state.overviewExpanded;
       syncOverviewDisclosure();
     });
-    render();
+
+    await renderAsync();
   } catch (error) {
     console.error(error);
     alert('加载看板失败');

@@ -49,12 +49,24 @@ def short_period_label(period_type: str, period_key: str) -> str:
     raise ValueError(period_type)
 
 
-def fetch_transactions(db_path: Path = DB_PATH) -> list[dict]:
+def fetch_transactions(db_path: Path = DB_PATH, *, month: str | None = None, year: str | None = None, week: str | None = None) -> list[dict]:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
+        where_clauses = []
+        params: list = []
+        if month:
+            where_clauses.append('t.month = ?')
+            params.append(month)
+        if year:
+            where_clauses.append('t.year = ?')
+            params.append(year)
+        if week:
+            where_clauses.append('t.week = ?')
+            params.append(week)
+        where_sql = (' WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
         rows = conn.execute(
-            '''
+            f'''
             SELECT
               t.id,
               t.occurred_on,
@@ -77,8 +89,10 @@ def fetch_transactions(db_path: Path = DB_PATH) -> list[dict]:
               t.occurrence_index
             FROM transactions t
             LEFT JOIN subcategories s ON s.id = t.subcategory_id
+            {where_sql}
             ORDER BY t.occurred_on, t.id
-            '''
+            ''',
+            params,
         ).fetchall()
         return [
             {
@@ -226,7 +240,125 @@ def build_trend_series(period_type: str, grouped_rows: dict[str, list[dict]], or
     return trend
 
 
+def _fetch_trend_data(db_path: Path = DB_PATH) -> dict[str, list[dict]]:
+    """用 SQL 聚合获取趋势数据，避免全量加载交易记录。"""
+    conn = sqlite3.connect(db_path)
+    try:
+        result: dict[str, list[dict]] = {}
+        for period_type, col in [('year', 'year'), ('month', 'month'), ('week', 'week')]:
+            limit = 8 if period_type == 'year' else 12
+            rows = conn.execute(
+                f'''
+                SELECT {col} AS period_key, io_type,
+                       SUM(amount_cents) AS total_cents
+                FROM transactions
+                GROUP BY {col}, io_type
+                ORDER BY {col}
+                '''
+            ).fetchall()
+            agg: dict[str, dict[str, int]] = defaultdict(lambda: {'income': 0, 'expense': 0})
+            for row in rows:
+                key = row[0]
+                io = row[1]
+                if io == '收入':
+                    agg[key]['income'] = row[2]
+                elif io == '支出':
+                    agg[key]['expense'] = row[2]
+            ordered_keys = sorted(agg.keys())
+            selected = ordered_keys[-limit:]
+            trend = []
+            for key in selected:
+                trend.append({
+                    'key': key,
+                    'label': short_period_label(period_type, key),
+                    'short_label': key if period_type == 'year' else (key[-2:] if period_type == 'month' else key.split('-W')[1]),
+                    'income': cents_to_amount(agg[key]['income']),
+                    'expense': cents_to_amount(agg[key]['expense']),
+                })
+            result[period_type] = trend
+        return result
+    finally:
+        conn.close()
+
+
+def _fetch_period_keys(db_path: Path = DB_PATH) -> dict[str, list[str]]:
+    """获取各维度的所有周期 key 列表。"""
+    conn = sqlite3.connect(db_path)
+    try:
+        result = {}
+        for period_type, col in [('year', 'year'), ('month', 'month'), ('week', 'week')]:
+            rows = conn.execute(f'SELECT DISTINCT {col} FROM transactions ORDER BY {col}').fetchall()
+            result[period_type] = [row[0] for row in rows]
+        return result
+    finally:
+        conn.close()
+
+
+def build_dashboard_skeleton(db_path: Path = DB_PATH) -> dict:
+    """轻量初始加载：控件选项 + 趋势图 + 默认周期快照。"""
+    period_keys = _fetch_period_keys(db_path)
+    trend_data = _fetch_trend_data(db_path)
+
+    controls = {'period_types': list(PERIOD_TYPES), 'options': {}, 'default_periods': {}}
+    default_period_type = 'month'
+
+    for period_type in PERIOD_TYPES:
+        ordered_keys = period_keys[period_type]
+        controls['default_periods'][period_type] = ordered_keys[-1] if ordered_keys else ''
+        controls['options'][period_type] = [
+            {'value': key, 'label': short_period_label(period_type, key)}
+            for key in reversed(ordered_keys)
+        ]
+
+    default_month = controls['default_periods']['month']
+    default_snapshot = build_single_snapshot('month', default_month, db_path) if default_month else {}
+
+    return {
+        'summary': fetch_summary(db_path),
+        'controls': controls,
+        'default_period_type': default_period_type,
+        'trend': trend_data,
+        'default_snapshot': default_snapshot,
+    }
+
+
+def build_single_snapshot(period_type: str, period_key: str, db_path: Path = DB_PATH) -> dict:
+    """按需计算单个周期的快照。"""
+    if period_type not in PERIOD_TYPES:
+        raise ValueError(f'无效的周期类型: {period_type}')
+
+    filter_kw = {period_type: period_key}
+    rows = fetch_transactions(db_path, **filter_kw)
+    if not rows:
+        return {
+            'key': period_key,
+            'label': format_period_label(period_type, period_key) if period_type != 'week' else period_key,
+            'income': 0, 'expense': 0, 'balance': 0,
+            'daily_avg_expense': 0, 'transactions': 0, 'active_days': 0,
+            'rankings': {'primary': [], 'secondary': []},
+            'single_expense_top10': [],
+            'overview_rows': [],
+        }
+
+    # overview_rows 需要同维度的分组数据
+    if period_type == 'year':
+        scope_rows = rows
+    elif period_type == 'month':
+        year = period_key.split('-')[0]
+        scope_rows = fetch_transactions(db_path, year=year)
+    else:
+        target_month = rows[0]['month'] if rows else ''
+        scope_rows = fetch_transactions(db_path, month=target_month) if target_month else rows
+
+    grouped_for_overview: dict[str, dict[str, list[dict]]] = {pt: defaultdict(list) for pt in PERIOD_TYPES}
+    for row in scope_rows:
+        grouped_for_overview[period_type][row[period_type]].append(row)
+
+    return build_period_snapshot(period_type, period_key, rows, grouped_for_overview)
+
+
 def build_dashboard_payload(db_path: Path = DB_PATH) -> dict:
+    """原始全量加载接口，保留向后兼容。"""
     transactions = fetch_transactions(db_path)
     grouped: dict[str, dict[str, list[dict]]] = {period_type: defaultdict(list) for period_type in PERIOD_TYPES}
     for row in transactions:
@@ -276,33 +408,53 @@ def list_subcategories(db_path: Path = DB_PATH) -> list[str]:
 
 
 def build_category_presets(db_path: Path = DB_PATH) -> list[dict]:
-    grouped: dict[str, Counter[str]] = defaultdict(Counter)
-    category_counts: Counter[str] = Counter()
-    category_types: dict[str, Counter[str]] = defaultdict(Counter)
-    for row in fetch_transactions(db_path):
-        category = row['category']
-        category_counts[category] += 1
-        category_types[category][row['io_type']] += 1
-        if row['subcategory']:
-            grouped[category][row['subcategory']] += 1
-    presets = []
-    for category, count in category_counts.most_common():
-        presets.append(
-            {
+    conn = sqlite3.connect(db_path)
+    try:
+        cat_rows = conn.execute(
+            '''
+            SELECT category, io_type, COUNT(*) AS cnt
+            FROM transactions
+            GROUP BY category, io_type
+            ORDER BY category
+            '''
+        ).fetchall()
+        category_counts: Counter[str] = Counter()
+        category_types: dict[str, Counter[str]] = defaultdict(Counter)
+        for row in cat_rows:
+            category_counts[row[0]] += row[2]
+            category_types[row[0]][row[1]] += row[2]
+
+        sub_rows = conn.execute(
+            '''
+            SELECT t.category, s.name, COUNT(*) AS cnt
+            FROM transactions t
+            JOIN subcategories s ON s.id = t.subcategory_id
+            GROUP BY t.category, s.name
+            ORDER BY t.category, cnt DESC
+            '''
+        ).fetchall()
+        grouped_subs: dict[str, list[tuple[str, int]]] = defaultdict(list)
+        for row in sub_rows:
+            grouped_subs[row[0]].append((row[1], row[2]))
+
+        presets = []
+        for category, count in category_counts.most_common():
+            presets.append({
                 'name': category,
                 'count': count,
                 'io_types': [name for name, _ in category_types[category].most_common()],
                 'subcategories': [
                     {'name': name, 'count': subcount}
-                    for name, subcount in grouped[category].most_common(12)
+                    for name, subcount in grouped_subs[category][:12]
                 ],
-            }
-        )
-    return presets
+            })
+        return presets
+    finally:
+        conn.close()
 
 
 def build_month_detail(month: str, db_path: Path = DB_PATH) -> dict:
-    transactions = [row for row in fetch_transactions(db_path) if row['month'] == month]
+    transactions = fetch_transactions(db_path, month=month)
     income = sum(row['amount_cents'] for row in transactions if row['io_type'] == '收入')
     expense = sum(row['amount_cents'] for row in transactions if row['io_type'] == '支出')
     by_day: dict[str, list[dict]] = defaultdict(list)

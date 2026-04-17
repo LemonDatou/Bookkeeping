@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from flask import Flask, Response, jsonify, redirect, render_template_string, request, send_from_directory, session, url_for
 from werkzeug.security import check_password_hash
 
-from payloads import DB_PATH, ROOT, amount_to_cents, build_dashboard_payload, build_detail_bootstrap, build_month_detail
+from payloads import DB_PATH, ROOT, amount_to_cents, build_dashboard_payload, build_dashboard_skeleton, build_detail_bootstrap, build_month_detail, build_single_snapshot
 
 APP_TZ = ZoneInfo(os.environ.get('BOOKKEEPING_TIMEZONE', 'Asia/Shanghai'))
 BACKUP_DIR = ROOT / 'data' / 'backups'
@@ -156,6 +156,22 @@ def create_app() -> Flask:
         payload['csrf_token'] = session['csrf_token']
         return payload
 
+
+    @app.get("/api/dashboard/init")
+    @login_required
+    def api_dashboard_init():
+        payload = build_dashboard_skeleton(DB_PATH)
+        payload["csrf_token"] = session["csrf_token"]
+        return payload
+
+    @app.get("/api/dashboard/snapshot")
+    @login_required
+    def api_dashboard_snapshot():
+        period_type = request.args.get("type", "")
+        period_key = request.args.get("key", "")
+        if not period_type or not period_key:
+            return jsonify({"error": "missing type or key"}), 400
+        return build_single_snapshot(period_type, period_key, DB_PATH)
     @app.get('/api/detail/bootstrap')
     @login_required
     def api_detail_bootstrap():
