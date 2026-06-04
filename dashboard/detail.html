@@ -45,13 +45,16 @@
       <div class="modal-backdrop" data-close="1"></div>
       <div class="modal-card">
         <div class="modal-header">
-          <h2 id="modal-title">新增记账</h2>
-          <button type="button" class="text-btn" data-close="1">关闭</button>
+          <div class="type-tabs" role="tablist" aria-label="收支类型">
+            <button type="button" class="type-tab active" data-io-type="支出">支出</button>
+            <button type="button" class="type-tab" data-io-type="收入">收入</button>
+          </div>
+          <button type="button" class="text-btn" data-close="1">取消</button>
         </div>
         <form id="entry-form" class="entry-form">
-          <label><span>收支类型</span><select name="io_type" required><option value="支出">支出</option><option value="收入">收入</option></select></label>
-          <label><span>日期</span><input name="occurred_on" type="date" required /></label>
-          <label><span>金额</span><input name="amount" type="number" step="0.01" min="0.01" required /></label>
+          <input name="io_type" type="hidden" value="支出" required />
+          <input name="occurred_on" type="date" required class="native-date-input" />
+          <input name="amount" type="hidden" required />
           <div class="entry-field">
             <div class="field-head">
               <span>一级分类</span>
@@ -69,11 +72,35 @@
             <div id="subcategory-picker" class="subcategory-picker"></div>
             <input name="subcategory" list="subcategory-options" placeholder="没有合适的就手动填写" />
           </div>
-          <label><span>备注</span><input name="memo" /></label>
           <datalist id="subcategory-options"></datalist>
-          <div class="modal-actions">
-            <button type="button" id="delete-entry-btn" class="danger-btn hidden">删除</button>
-            <button type="submit" class="primary-btn">保存</button>
+
+          <div class="quick-entry-dock">
+            <div class="amount-row">
+              <button type="button" id="delete-entry-btn" class="danger-btn hidden">删除</button>
+              <output id="amount-display" class="amount-display">0.00</output>
+            </div>
+            <label class="memo-field">
+              <span>备注：</span>
+              <input name="memo" placeholder="点击填写备注" />
+            </label>
+            <div class="keypad" aria-label="金额键盘">
+              <button type="button" class="keypad-key" data-key="7">7</button>
+              <button type="button" class="keypad-key" data-key="8">8</button>
+              <button type="button" class="keypad-key" data-key="9">9</button>
+              <button type="button" id="date-shortcut" class="keypad-key meta-key" data-date-trigger>今天</button>
+              <button type="button" class="keypad-key" data-key="4">4</button>
+              <button type="button" class="keypad-key" data-key="5">5</button>
+              <button type="button" class="keypad-key" data-key="6">6</button>
+              <button type="button" class="keypad-key" data-op="+">+</button>
+              <button type="button" class="keypad-key" data-key="1">1</button>
+              <button type="button" class="keypad-key" data-key="2">2</button>
+              <button type="button" class="keypad-key" data-key="3">3</button>
+              <button type="button" class="keypad-key" data-op="-">-</button>
+              <button type="button" class="keypad-key" data-key=".">.</button>
+              <button type="button" class="keypad-key" data-key="0">0</button>
+              <button type="button" class="keypad-key" data-backspace aria-label="退格">⌫</button>
+              <button type="submit" class="keypad-key done-key">完成</button>
+            </div>
           </div>
         </form>
       </div>

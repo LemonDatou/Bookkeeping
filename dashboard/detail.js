@@ -12,6 +12,10 @@ const state = {
   editingId: null,
   selectedCategory: '',
   categoryPickerExpanded: true,
+  amountBuffer: '',
+  pendingAmount: null,
+  pendingOperator: '',
+  resetAmountOnNextDigit: false,
 };
 const entryCache = new Map();
 
@@ -25,7 +29,10 @@ const els = {
   entryModal: document.querySelector('#entry-modal'),
   modalTitle: document.querySelector('#modal-title'),
   entryForm: document.querySelector('#entry-form'),
+  typeTabs: document.querySelectorAll('[data-io-type]'),
+  amountDisplay: document.querySelector('#amount-display'),
   deleteEntryBtn: document.querySelector('#delete-entry-btn'),
+  dateShortcut: document.querySelector('#date-shortcut'),
   categoryToggle: document.querySelector('#category-toggle'),
   selectedCategory: document.querySelector('#selected-category'),
   categoryPicker: document.querySelector('#category-picker'),
@@ -102,6 +109,106 @@ function currentIoType() {
   return els.entryForm.io_type.value || '支出';
 }
 
+function formatAmountInput(value) {
+  if (!value) return '0.00';
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) return value;
+  return normalized.toLocaleString('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function normalizeAmountBuffer(value) {
+  const raw = String(value ?? '').replace(/,/g, '').trim();
+  if (!raw || raw === '.') return '';
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric) || numeric <= 0) return '';
+  return String(Math.round(numeric * 100) / 100);
+}
+
+function syncAmountDisplay() {
+  const normalized = normalizeAmountBuffer(state.amountBuffer);
+  els.entryForm.amount.value = normalized;
+  const displayValue = formatAmountInput(state.amountBuffer);
+  els.amountDisplay.value = displayValue;
+  els.amountDisplay.textContent = displayValue;
+}
+
+function setAmountBuffer(value) {
+  state.amountBuffer = normalizeAmountBuffer(value);
+  syncAmountDisplay();
+}
+
+function appendAmountKey(key) {
+  if (state.resetAmountOnNextDigit) {
+    state.amountBuffer = '';
+    state.resetAmountOnNextDigit = false;
+  }
+  if (key === '.') {
+    if (state.amountBuffer.includes('.')) return;
+    state.amountBuffer = state.amountBuffer ? `${state.amountBuffer}.` : '0.';
+    syncAmountDisplay();
+    return;
+  }
+  if (state.amountBuffer === '0') {
+    state.amountBuffer = key;
+  } else {
+    state.amountBuffer = `${state.amountBuffer}${key}`;
+  }
+  const [integerPart, decimalPart = ''] = state.amountBuffer.split('.');
+  if (integerPart.length > 9 || decimalPart.length > 2) {
+    state.amountBuffer = state.amountBuffer.slice(0, -1);
+    return;
+  }
+  syncAmountDisplay();
+}
+
+function backspaceAmount() {
+  if (state.resetAmountOnNextDigit) {
+    state.resetAmountOnNextDigit = false;
+    state.pendingAmount = null;
+    state.pendingOperator = '';
+  }
+  state.amountBuffer = state.amountBuffer.slice(0, -1);
+  syncAmountDisplay();
+}
+
+function applyPendingAmount() {
+  const current = Number(normalizeAmountBuffer(state.amountBuffer) || 0);
+  if (state.pendingAmount === null || !state.pendingOperator) return current;
+  const next = state.pendingOperator === '+' ? state.pendingAmount + current : state.pendingAmount - current;
+  return Math.max(next, 0);
+}
+
+function queueAmountOperator(operator) {
+  if (!normalizeAmountBuffer(state.amountBuffer)) return;
+  const result = applyPendingAmount();
+  state.pendingAmount = result;
+  state.pendingOperator = operator;
+  state.amountBuffer = normalizeAmountBuffer(result);
+  state.resetAmountOnNextDigit = true;
+  syncAmountDisplay();
+}
+
+function finalizeAmountExpression() {
+  if (state.pendingAmount !== null && !state.resetAmountOnNextDigit) {
+    setAmountBuffer(applyPendingAmount());
+  } else {
+    syncAmountDisplay();
+  }
+  state.pendingAmount = null;
+  state.pendingOperator = '';
+  state.resetAmountOnNextDigit = false;
+}
+
+function setIoType(ioType) {
+  els.entryForm.io_type.value = ioType;
+  els.typeTabs.forEach((button) => {
+    button.classList.toggle('active', button.dataset.ioType === ioType);
+  });
+}
+
 function sortedCategoriesForCurrentType() {
   const ioType = currentIoType();
   return getCategoryPresets()
@@ -122,6 +229,17 @@ function todayString() {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);
+}
+
+function dateLabel(dateString) {
+  if (!dateString) return '选择日期';
+  if (dateString === todayString()) return '今天';
+  const [, month, day] = dateString.split('-');
+  return `${Number(month)}月${Number(day)}日`;
+}
+
+function syncDateShortcut() {
+  els.dateShortcut.textContent = dateLabel(els.entryForm.occurred_on.value);
 }
 
 function syncCategoryPickerVisibility() {
@@ -324,27 +442,31 @@ async function maybeAppendNextMonth() {
 
 function openModal(item = null) {
   state.editingId = item ? item.id : null;
-  els.modalTitle.textContent = item ? '修改记账' : '新增记账';
   els.deleteEntryBtn.classList.toggle('hidden', !item || isOfflinePreview);
   els.entryForm.reset();
+  state.pendingAmount = null;
+  state.pendingOperator = '';
+  state.resetAmountOnNextDigit = false;
   const defaultDate = todayString();
   if (item) {
-    els.entryForm.io_type.value = item.io_type;
+    setIoType(item.io_type);
     els.entryForm.occurred_on.value = item.date || defaultDate;
-    els.entryForm.amount.value = item.amount;
+    setAmountBuffer(item.amount);
     els.entryForm.category.value = item.category;
     els.entryForm.subcategory.value = item.subcategory || '';
     els.entryForm.memo.value = item.memo || '';
     state.selectedCategory = item.category;
-    state.categoryPickerExpanded = false;
+    state.categoryPickerExpanded = true;
   } else {
-    els.entryForm.io_type.value = '支出';
+    setIoType('支出');
     els.entryForm.occurred_on.value = defaultDate;
+    setAmountBuffer('');
     els.entryForm.category.value = '';
     els.entryForm.subcategory.value = '';
     state.selectedCategory = '';
     state.categoryPickerExpanded = true;
   }
+  syncDateShortcut();
   renderCategoryPicker();
   renderSubcategoryPicker();
   els.entryModal.classList.remove('hidden');
@@ -378,6 +500,7 @@ async function reloadCurrentMonth() {
 }
 
 function formPayload() {
+  finalizeAmountExpression();
   const form = new FormData(els.entryForm);
   return {
     io_type: form.get('io_type'),
@@ -396,6 +519,14 @@ async function submitEntry(event) {
     return;
   }
   const payload = formPayload();
+  if (!payload.amount) {
+    alert('请先输入金额');
+    return;
+  }
+  if (!payload.category) {
+    alert('请先选择分类');
+    return;
+  }
   try {
     if (state.editingId) {
       await fetchJson(`/api/transactions/${state.editingId}`, { method: 'PATCH', body: JSON.stringify(payload) });
@@ -450,7 +581,8 @@ async function init() {
       state.categoryPickerExpanded = !state.categoryPickerExpanded;
       syncCategoryPickerVisibility();
     });
-    els.entryForm.io_type.addEventListener('change', () => {
+    const handleIoTypeChange = (ioType) => {
+      setIoType(ioType);
       const candidates = sortedCategoriesForCurrentType();
       if (!candidates.some((item) => item.name === els.entryForm.category.value)) {
         state.selectedCategory = '';
@@ -460,6 +592,38 @@ async function init() {
       }
       renderCategoryPicker();
       renderSubcategoryPicker();
+    };
+    els.typeTabs.forEach((button) => {
+      button.addEventListener('click', () => handleIoTypeChange(button.dataset.ioType));
+    });
+    els.entryForm.occurred_on.addEventListener('change', syncDateShortcut);
+    els.dateShortcut.addEventListener('click', () => {
+      if (typeof els.entryForm.occurred_on.showPicker === 'function') {
+        els.entryForm.occurred_on.showPicker();
+      } else {
+        els.entryForm.occurred_on.click();
+      }
+    });
+    els.entryForm.querySelectorAll('[data-key]').forEach((button) => {
+      button.addEventListener('click', () => appendAmountKey(button.dataset.key));
+    });
+    els.entryForm.querySelectorAll('[data-op]').forEach((button) => {
+      button.addEventListener('click', () => queueAmountOperator(button.dataset.op));
+    });
+    els.entryForm.querySelector('[data-backspace]').addEventListener('click', backspaceAmount);
+    els.entryForm.addEventListener('keydown', (event) => {
+      if (/^[0-9.]$/.test(event.key)) {
+        event.preventDefault();
+        appendAmountKey(event.key);
+      } else if (event.key === 'Backspace') {
+        event.preventDefault();
+        backspaceAmount();
+      } else if (event.key === '+' || event.key === '-') {
+        event.preventDefault();
+        queueAmountOperator(event.key);
+      } else if (event.key === 'Enter') {
+        finalizeAmountExpression();
+      }
     });
     els.entryForm.subcategory.addEventListener('input', () => {
       renderSubcategoryPicker();
