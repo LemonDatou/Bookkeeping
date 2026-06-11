@@ -12,10 +12,7 @@ const state = {
   editingId: null,
   selectedCategory: '',
   categoryPickerExpanded: true,
-  amountBuffer: '',
-  pendingAmount: null,
-  pendingOperator: '',
-  resetAmountOnNextDigit: false,
+  amountExpression: '',
 };
 const entryCache = new Map();
 
@@ -31,6 +28,7 @@ const els = {
   entryForm: document.querySelector('#entry-form'),
   typeTabs: document.querySelectorAll('[data-io-type]'),
   amountDisplay: document.querySelector('#amount-display'),
+  amountAction: document.querySelector('#amount-action'),
   deleteEntryBtn: document.querySelector('#delete-entry-btn'),
   dateShortcut: document.querySelector('#date-shortcut'),
   categoryToggle: document.querySelector('#category-toggle'),
@@ -109,17 +107,7 @@ function currentIoType() {
   return els.entryForm.io_type.value || '支出';
 }
 
-function formatAmountInput(value) {
-  if (!value) return '0.00';
-  const normalized = Number(value);
-  if (!Number.isFinite(normalized)) return value;
-  return normalized.toLocaleString('zh-CN', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-function normalizeAmountBuffer(value) {
+function normalizeAmountValue(value) {
   const raw = String(value ?? '').replace(/,/g, '').trim();
   if (!raw || raw === '.') return '';
   const numeric = Number(raw);
@@ -127,79 +115,77 @@ function normalizeAmountBuffer(value) {
   return String(Math.round(numeric * 100) / 100);
 }
 
-function syncAmountDisplay() {
-  const normalized = normalizeAmountBuffer(state.amountBuffer);
-  els.entryForm.amount.value = normalized;
-  const displayValue = formatAmountInput(state.amountBuffer);
-  els.amountDisplay.value = displayValue;
-  els.amountDisplay.textContent = displayValue;
+function completeExpressionMatch() {
+  return state.amountExpression.match(/^(\d+(?:\.\d{1,2})?)([+-])(\d+(?:\.\d{1,2})?)$/);
 }
 
-function setAmountBuffer(value) {
-  state.amountBuffer = normalizeAmountBuffer(value);
+function amountValueForSubmit() {
+  const expression = state.amountExpression.replace(/[+-]$/, '');
+  return normalizeAmountValue(expression);
+}
+
+function syncAmountDisplay() {
+  const displayValue = state.amountExpression || '0.00';
+  els.entryForm.amount.value = completeExpressionMatch() ? '' : amountValueForSubmit();
+  els.amountDisplay.value = displayValue;
+  els.amountDisplay.textContent = displayValue;
+  els.amountAction.textContent = completeExpressionMatch() ? '=' : '完成';
+}
+
+function setAmountExpression(value) {
+  state.amountExpression = normalizeAmountValue(value);
   syncAmountDisplay();
 }
 
 function appendAmountKey(key) {
-  if (state.resetAmountOnNextDigit) {
-    state.amountBuffer = '';
-    state.resetAmountOnNextDigit = false;
-  }
+  const operatorIndex = Math.max(state.amountExpression.lastIndexOf('+'), state.amountExpression.lastIndexOf('-'));
+  const segmentStart = operatorIndex + 1;
+  const segment = state.amountExpression.slice(segmentStart);
   if (key === '.') {
-    if (state.amountBuffer.includes('.')) return;
-    state.amountBuffer = state.amountBuffer ? `${state.amountBuffer}.` : '0.';
+    if (segment.includes('.')) return;
+    state.amountExpression += segment ? '.' : '0.';
     syncAmountDisplay();
     return;
   }
-  if (state.amountBuffer === '0') {
-    state.amountBuffer = key;
+  if (segment === '0') {
+    state.amountExpression = `${state.amountExpression.slice(0, segmentStart)}${key}`;
   } else {
-    state.amountBuffer = `${state.amountBuffer}${key}`;
+    state.amountExpression += key;
   }
-  const [integerPart, decimalPart = ''] = state.amountBuffer.split('.');
+  const nextSegment = state.amountExpression.slice(segmentStart);
+  const [integerPart, decimalPart = ''] = nextSegment.split('.');
   if (integerPart.length > 9 || decimalPart.length > 2) {
-    state.amountBuffer = state.amountBuffer.slice(0, -1);
+    state.amountExpression = state.amountExpression.slice(0, -1);
     return;
   }
   syncAmountDisplay();
 }
 
 function backspaceAmount() {
-  if (state.resetAmountOnNextDigit) {
-    state.resetAmountOnNextDigit = false;
-    state.pendingAmount = null;
-    state.pendingOperator = '';
-  }
-  state.amountBuffer = state.amountBuffer.slice(0, -1);
+  state.amountExpression = state.amountExpression.slice(0, -1);
   syncAmountDisplay();
-}
-
-function applyPendingAmount() {
-  const current = Number(normalizeAmountBuffer(state.amountBuffer) || 0);
-  if (state.pendingAmount === null || !state.pendingOperator) return current;
-  const next = state.pendingOperator === '+' ? state.pendingAmount + current : state.pendingAmount - current;
-  return Math.max(next, 0);
 }
 
 function queueAmountOperator(operator) {
-  if (!normalizeAmountBuffer(state.amountBuffer)) return;
-  const result = applyPendingAmount();
-  state.pendingAmount = result;
-  state.pendingOperator = operator;
-  state.amountBuffer = normalizeAmountBuffer(result);
-  state.resetAmountOnNextDigit = true;
+  if (!amountValueForSubmit() && !completeExpressionMatch()) return;
+  if (completeExpressionMatch()) calculateAmountExpression();
+  if (/[+-]$/.test(state.amountExpression)) {
+    state.amountExpression = `${state.amountExpression.slice(0, -1)}${operator}`;
+  } else {
+    state.amountExpression += operator;
+  }
   syncAmountDisplay();
 }
 
-function finalizeAmountExpression() {
-  if (state.pendingAmount !== null && !state.resetAmountOnNextDigit) {
-    setAmountBuffer(applyPendingAmount());
-  } else {
-    syncAmountDisplay();
-  }
-  state.pendingAmount = null;
-  state.pendingOperator = '';
-  state.resetAmountOnNextDigit = false;
+function calculateAmountExpression() {
+  const match = completeExpressionMatch();
+  if (!match) return false;
+  const left = Number(match[1]);
+  const right = Number(match[3]);
+  const result = match[2] === '+' ? left + right : left - right;
+  state.amountExpression = result > 0 ? String(Math.round(result * 100) / 100) : '';
+  syncAmountDisplay();
+  return true;
 }
 
 function setIoType(ioType) {
@@ -444,14 +430,11 @@ function openModal(item = null) {
   state.editingId = item ? item.id : null;
   els.deleteEntryBtn.classList.toggle('hidden', !item || isOfflinePreview);
   els.entryForm.reset();
-  state.pendingAmount = null;
-  state.pendingOperator = '';
-  state.resetAmountOnNextDigit = false;
   const defaultDate = todayString();
   if (item) {
     setIoType(item.io_type);
     els.entryForm.occurred_on.value = item.date || defaultDate;
-    setAmountBuffer(item.amount);
+    setAmountExpression(item.amount);
     els.entryForm.category.value = item.category;
     els.entryForm.subcategory.value = item.subcategory || '';
     els.entryForm.memo.value = item.memo || '';
@@ -460,7 +443,7 @@ function openModal(item = null) {
   } else {
     setIoType('支出');
     els.entryForm.occurred_on.value = defaultDate;
-    setAmountBuffer('');
+    setAmountExpression('');
     els.entryForm.category.value = '';
     els.entryForm.subcategory.value = '';
     state.selectedCategory = '';
@@ -500,7 +483,8 @@ async function reloadCurrentMonth() {
 }
 
 function formPayload() {
-  finalizeAmountExpression();
+  if (completeExpressionMatch()) calculateAmountExpression();
+  els.entryForm.amount.value = amountValueForSubmit();
   const form = new FormData(els.entryForm);
   return {
     io_type: form.get('io_type'),
@@ -611,7 +595,14 @@ async function init() {
       button.addEventListener('click', () => queueAmountOperator(button.dataset.op));
     });
     els.entryForm.querySelector('[data-backspace]').addEventListener('click', backspaceAmount);
+    els.amountAction.addEventListener('click', () => {
+      if (!calculateAmountExpression()) els.entryForm.requestSubmit();
+    });
     els.entryForm.addEventListener('keydown', (event) => {
+      const target = event.target;
+      const isInteractiveTarget = target instanceof HTMLElement
+        && (target.matches('input, textarea, button, select') || target.isContentEditable);
+      if (isInteractiveTarget) return;
       if (/^[0-9.]$/.test(event.key)) {
         event.preventDefault();
         appendAmountKey(event.key);
@@ -622,7 +613,8 @@ async function init() {
         event.preventDefault();
         queueAmountOperator(event.key);
       } else if (event.key === 'Enter') {
-        finalizeAmountExpression();
+        event.preventDefault();
+        if (!calculateAmountExpression()) els.entryForm.requestSubmit();
       }
     });
     els.entryForm.subcategory.addEventListener('input', () => {
