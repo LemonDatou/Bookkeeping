@@ -581,13 +581,6 @@ async function init() {
       button.addEventListener('click', () => handleIoTypeChange(button.dataset.ioType));
     });
     els.entryForm.occurred_on.addEventListener('change', syncDateShortcut);
-    els.dateShortcut.addEventListener('click', () => {
-      if (typeof els.entryForm.occurred_on.showPicker === 'function') {
-        els.entryForm.occurred_on.showPicker();
-      } else {
-        els.entryForm.occurred_on.click();
-      }
-    });
     els.entryForm.querySelectorAll('[data-key]').forEach((button) => {
       button.addEventListener('click', () => appendAmountKey(button.dataset.key));
     });

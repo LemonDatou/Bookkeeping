@@ -53,7 +53,6 @@
         </div>
         <form id="entry-form" class="entry-form">
           <input name="io_type" type="hidden" value="支出" required />
-          <input name="occurred_on" type="date" required class="native-date-input" />
           <input name="amount" type="hidden" required />
           <div class="entry-field">
             <div class="field-head">
@@ -87,7 +86,10 @@
               <button type="button" class="keypad-key" data-key="7">7</button>
               <button type="button" class="keypad-key" data-key="8">8</button>
               <button type="button" class="keypad-key" data-key="9">9</button>
-              <button type="button" id="date-shortcut" class="keypad-key meta-key" data-date-trigger>今天</button>
+              <label class="keypad-key meta-key date-key">
+                <span id="date-shortcut">今天</span>
+                <input name="occurred_on" type="date" required class="native-date-input" aria-label="记账日期" />
+              </label>
               <button type="button" class="keypad-key" data-key="4">4</button>
               <button type="button" class="keypad-key" data-key="5">5</button>
               <button type="button" class="keypad-key" data-key="6">6</button>
